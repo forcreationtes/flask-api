@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import pandas as pd
+import numpy as np
 import joblib
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
@@ -15,21 +16,22 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.get_json()
-    features = np.array([[data['open'], data['high'], data['low'], data['close'], data['volume']]])
-    prediction = model.predict(features)
-    return jsonify({'drop_predicted': int(prediction[0])})
-
     try:
+        data = request.get_json()
+        print("🔍 Received data:", data)
+
         # Create DataFrame from JSON payload
         df = pd.DataFrame([data])
 
-        # Add features
+        # Add technical indicators
         df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
         df['ema9'] = EMAIndicator(df['close'], window=9).ema_indicator()
         df['ema21'] = EMAIndicator(df['close'], window=21).ema_indicator()
 
-        # Select features model expects
+        # Fill NaNs that may occur due to small input window
+        df.fillna(method='bfill', inplace=True)
+
+        # Select model input features
         X = df[['rsi', 'ema9', 'ema21']]
 
         prediction = model.predict(X)[0]
@@ -41,7 +43,8 @@ def predict():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        print("❌ Error:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
