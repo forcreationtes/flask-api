@@ -6,60 +6,45 @@ from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 
 app = Flask(__name__)
-
-# Load trained model
 model = joblib.load("drop_predictor.pkl")
 
 @app.route("/")
 def home():
     return "✅ ML Prediction API is running!"
 
-@app.route('/predict', methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
     try:
-        # Parse incoming JSON
         data = request.get_json()
-        print("📥 Incoming JSON data:", data)
+        print("📥 Received data:", data)
 
-        # Check if data is missing
-        if not data:
-            raise ValueError("❌ No JSON data received in request.")
-
-        # Create DataFrame
+        # Step 1: Build DataFrame with raw input
         df = pd.DataFrame([data])
-        print("📊 Converted to DataFrame:", df)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df.dropna(inplace=True)
 
-        # Ensure numeric conversion just in case
-        df = df.astype(float)
-
-        # Add technical indicators
-        df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi()
-        df['ema9'] = EMAIndicator(close=df['close'], window=9).ema_indicator()
-        df['ema21'] = EMAIndicator(close=df['close'], window=21).ema_indicator()
-
-        # Fill NaNs that may occur
+        # Step 2: Calculate features (same as model was trained on)
+        df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
+        df['ema9'] = EMAIndicator(df['close'], window=9).ema_indicator()
+        df['ema21'] = EMAIndicator(df['close'], window=21).ema_indicator()
         df.fillna(method='bfill', inplace=True)
 
-        # Debug final features
-        print("🔍 Model Features:", df[['rsi', 'ema9', 'ema21']])
-
-        # Extract features
+        # Step 3: Only pass trained-on features
         X = df[['rsi', 'ema9', 'ema21']]
 
-        # Make prediction
+        # Step 4: Predict
         prediction = model.predict(X)[0]
-        prob = model.predict_proba(X)[0][1]
-
-        print(f"✅ Prediction: {prediction}, Probability: {prob}")
+        probability = model.predict_proba(X)[0][1]
 
         return jsonify({
             "prediction": int(prediction),
-            "probability": round(prob, 4)
+            "probability": round(probability, 4)
         })
 
     except Exception as e:
-        print("❌ ERROR in /predict:", str(e))
+        print("❌ Error:", str(e))
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
